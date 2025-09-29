@@ -21,7 +21,6 @@ void decrypt(long key, unsigned char *ciph, int len, unsigned char *output){
     DES_set_odd_parity(&keyBlock);
     DES_set_key_unchecked(&keyBlock, &schedule);
     
-    //Decrypt each 8-byte block
     for(int i=0; i<len; i+=8){
         DES_ecb_encrypt((DES_cblock *)(ciph + i), 
                        (DES_cblock *)(output + i), 
@@ -41,12 +40,10 @@ void encrypt(long key, unsigned char *plain, int len, unsigned char *output){
         k += (key & (0xFEL << i*8));
     }
     
-    //Copy key to DES_cblock
     memcpy(&keyBlock, &k, 8);
     DES_set_odd_parity(&keyBlock);
     DES_set_key_unchecked(&keyBlock, &schedule);
     
-    //Encrypt each 8-byte block
     for(int i=0; i<len; i+=8){
         DES_ecb_encrypt((DES_cblock *)(plain + i), 
                        (DES_cblock *)(output + i), 
@@ -70,21 +67,18 @@ int readInputFile(char *filename, long *key, char **plaintext, int *plainlen, ch
         return 0;
     }
     
-    //Line 1: encryption key
     if(fscanf(file, "%ld\n", key) != 1){
         printf("Error: Cannot read encryption key\n");
         fclose(file);
         return 0;
     }
     
-    //Line 2: text to encrypt
     char buffer[1024];
     if(fgets(buffer, sizeof(buffer), file) == NULL){
         printf("Error: Cannot read plaintext\n");
         fclose(file);
         return 0;
     }
-    //Remove newline
     buffer[strcspn(buffer, "\n")] = 0;
     
     //Pad to multiple of 8 bytes
@@ -154,7 +148,6 @@ int main(int argc, char *argv[]){
         printf("Plaintext length (padded): %d bytes\n", ciphlen);
         printf("Search string: \"%s\"\n", search);
         
-        //Encrypt the plaintext
         cipher = (unsigned char *)malloc(ciphlen);
         encrypt(encryption_key, (unsigned char *)plaintext, ciphlen, cipher);
         
@@ -183,7 +176,6 @@ int main(int argc, char *argv[]){
         printf("\n\n");
     }
     
-    //Broadcast necessary data to all processes
     MPI_Bcast(&ciphlen, 1, MPI_INT, 0, comm);
     
     if(id != 0){
@@ -194,7 +186,6 @@ int main(int argc, char *argv[]){
     MPI_Bcast(cipher, ciphlen, MPI_UNSIGNED_CHAR, 0, comm);
     MPI_Bcast(search, 256, MPI_CHAR, 0, comm);
     
-    //Divide search space among processes
     long range_per_node = upper / N;
     mylower = range_per_node * id;
     myupper = range_per_node * (id+1) - 1;
@@ -219,8 +210,8 @@ int main(int argc, char *argv[]){
     long keys_tested = 0;
     int flag = 0;
     
+    //Check if another process found the key (check every 10000 keys to reduce overhead)
     for(long i = mylower; i < myupper; ++i){
-        //Check if another process found the key (check every 10000 keys to reduce overhead)
         if(keys_tested % 10000 == 0){
             MPI_Test(&req, &flag, &st);
             if(flag && found != 0){
@@ -239,7 +230,6 @@ int main(int argc, char *argv[]){
         }
         keys_tested++;
         
-        //Progress report every 1M keys
         if(keys_tested % 1000000 == 0){
             double elapsed = difftime(time(NULL), start_time);
             if(elapsed > 0){
@@ -249,14 +239,12 @@ int main(int argc, char *argv[]){
         }
     }
     
-    //Cancel pending receive if not completed
     if(!flag){
         MPI_Cancel(&req);
         MPI_Wait(&req, &st);
     }
     
     if(id == 0){
-        //Wait for result if not already received
         if(!flag){
             MPI_Wait(&req, &st);
         }
