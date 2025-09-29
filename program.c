@@ -210,6 +210,8 @@ int main(int argc, char *argv[]){
         printf("Starting search...\n\n");
     }
     
+    printf("[Process %d] Searching range: %ld to %ld\n", id, mylower, myupper);
+    
     long found = 0;
     MPI_Irecv(&found, 1, MPI_LONG, MPI_ANY_SOURCE, MPI_ANY_TAG, comm, &req);
     
@@ -218,11 +220,13 @@ int main(int argc, char *argv[]){
     int flag = 0;
     
     for(long i = mylower; i < myupper; ++i){
-        //Check if another process found the key
-        MPI_Test(&req, &flag, &st);
-        if(flag && found != 0){
-            printf("[Process %d] Received termination signal. Key found by another process: %ld\n", id, found);
-            break;
+        //Check if another process found the key (check every 10000 keys to reduce overhead)
+        if(keys_tested % 10000 == 0){
+            MPI_Test(&req, &flag, &st);
+            if(flag && found != 0){
+                printf("[Process %d] Received termination signal. Key found by another process: %ld\n", id, found);
+                break;
+            }
         }
         
         if(tryKey(i, cipher, ciphlen, search)){
@@ -235,8 +239,8 @@ int main(int argc, char *argv[]){
         }
         keys_tested++;
         
-        //Progress report every 1M keys (only for process 0)
-        if(id == 0 && keys_tested % 1000000 == 0){
+        //Progress report every 1M keys
+        if(keys_tested % 1000000 == 0){
             double elapsed = difftime(time(NULL), start_time);
             if(elapsed > 0){
                 printf("[Process %d] Progress: %ld keys tested (%.2f keys/sec)\n", 
