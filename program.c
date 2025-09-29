@@ -159,9 +159,26 @@ int main(int argc, char *argv[]){
         encrypt(encryption_key, (unsigned char *)plaintext, ciphlen, cipher);
         
         printf("\n--- Encrypted Data ---\n");
+        printf("Ciphertext (array): {");
+        for(int i=0; i<ciphlen; i++){
+            printf("%d", cipher[i]);
+            if(i < ciphlen-1) printf(", ");
+        }
+        printf("}\n");
+        
         printf("Ciphertext (hex): ");
         for(int i=0; i<ciphlen; i++){
             printf("%02x ", cipher[i]);
+        }
+        printf("\n");
+        
+        printf("Ciphertext (text): ");
+        for(int i=0; i<ciphlen; i++){
+            if(cipher[i] >= 32 && cipher[i] <= 126){
+                printf("%c", cipher[i]);
+            } else {
+                printf(".");
+            }
         }
         printf("\n\n");
     }
@@ -198,8 +215,16 @@ int main(int argc, char *argv[]){
     
     time_t start_time = time(NULL);
     long keys_tested = 0;
+    int flag = 0;
     
-    for(long i = mylower; i < myupper && (found == 0); ++i){
+    for(long i = mylower; i < myupper; ++i){
+        //Check if another process found the key
+        MPI_Test(&req, &flag, &st);
+        if(flag && found != 0){
+            printf("[Process %d] Received termination signal. Key found by another process: %ld\n", id, found);
+            break;
+        }
+        
         if(tryKey(i, cipher, ciphlen, search)){
             found = i;
             printf("[Process %d] KEY FOUND: %ld\n", id, found);
@@ -220,8 +245,17 @@ int main(int argc, char *argv[]){
         }
     }
     
-    if(id == 0){
+    //Cancel pending receive if not completed
+    if(!flag){
+        MPI_Cancel(&req);
         MPI_Wait(&req, &st);
+    }
+    
+    if(id == 0){
+        //Wait for result if not already received
+        if(!flag){
+            MPI_Wait(&req, &st);
+        }
         time_t end_time = time(NULL);
         
         printf("\n=== Results ===\n");
