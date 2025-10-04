@@ -59,6 +59,38 @@ int tryKey(long key, unsigned char *ciph, int len, char *search){
     return strstr((char *)temp, search) != NULL;
 }
 
+// Save encrypted message to binary file
+void saveBinaryFile(const char *filename, unsigned char *data, int len){
+    FILE *file = fopen(filename, "wb");
+    if(!file){
+        printf("Error: Cannot create file %s\n", filename);
+        return;
+    }
+    fwrite(data, 1, len, file);
+    fclose(file);
+    printf("Encrypted data saved to: %s\n", filename);
+}
+
+// Read a binary file into a byte array
+int readBinaryFile(const char *filename, unsigned char **data, int *len){
+    FILE *file = fopen(filename, "rb");
+    if(!file){
+        printf("Error: Cannot open file %s\n", filename);
+        return 0;
+    }
+    
+    fseek(file, 0, SEEK_END);
+    *len = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    
+    *data = (unsigned char *)malloc(*len);
+    fread(*data, 1, *len, file);
+    fclose(file);
+    
+    printf("Loaded encrypted file: %s (%d bytes)\n", filename, *len);
+    return 1;
+}
+
 //Read input file with 3 lines
 int readInputFile(char *filename, long *key, char **plaintext, int *plainlen, char **search){
     FILE *file = fopen(filename, "r");
@@ -103,6 +135,12 @@ int readInputFile(char *filename, long *key, char **plaintext, int *plainlen, ch
     return 1;
 }
 
+// Check if file has .bin extension
+int isBinaryFile(const char *filename){
+    int len = strlen(filename);
+    return (len > 4 && strcmp(filename + len - 4, ".bin") == 0);
+}
+
 int main(int argc, char *argv[]){
     int N, id;
     long upper = (1L << 56); //upper bound DES keys 2^56
@@ -116,13 +154,19 @@ int main(int argc, char *argv[]){
     MPI_Comm_size(comm, &N);
     MPI_Comm_rank(comm, &id);
     
-    if(argc != 2){
+    if(argc < 2){
         if(id == 0){
-            printf("Usage: mpirun -np <N> %s <input_file>\n", argv[0]);
-            printf("Input file format:\n");
-            printf("  Line 1: Encryption key (integer)\n");
-            printf("  Line 2: Text to encrypt\n");
-            printf("  Line 3: Substring to search for\n");
+            printf("Usage:\n");
+            printf("  MODE 1 (Encrypt from .txt):\n");
+            printf("    mpirun -np <N> %s <input.txt>\n", argv[0]);
+            printf("    Input file format:\n");
+            printf("      Line 1: Encryption key (integer)\n");
+            printf("      Line 2: Text to encrypt\n");
+            printf("      Line 3: Substring to search for\n");
+            printf("\n");
+            printf("  MODE 2 (Decrypt from .bin):\n");
+            printf("    mpirun -np <N> %s <encrypted.bin> <search_string>\n", argv[0]);
+            printf("    Example: mpirun -np 4 %s message.bin \"secret message\"\n", argv[0]);
         }
         MPI_Finalize();
         return 1;
@@ -132,50 +176,86 @@ int main(int argc, char *argv[]){
     char *plaintext = NULL;
     char *search = NULL;
     unsigned char *cipher = NULL;
-    
+    int is_binary_mode = isBinaryFile(argv[1]);
+
     //Only rank 0 reads file and encrypts
-    if(id == 0){
-        printf("=== DES Brute Force Cracker ===\n");
-        printf("Reading input from: %s\n\n", argv[1]);
-        
-        if(!readInputFile(argv[1], &encryption_key, &plaintext, &ciphlen, &search)){
-            MPI_Abort(comm, 1);
-        }
-        
-        printf("--- Input Parameters ---\n");
-        printf("Encryption key: %ld\n", encryption_key);
-        printf("Plaintext: %s\n", plaintext);
-        printf("Plaintext length (padded): %d bytes\n", ciphlen);
-        printf("Search string: \"%s\"\n", search);
-        
-        cipher = (unsigned char *)malloc(ciphlen);
-        encrypt(encryption_key, (unsigned char *)plaintext, ciphlen, cipher);
-        
-        printf("\n--- Encrypted Data ---\n");
-        printf("Ciphertext (array): {");
-        for(int i=0; i<ciphlen; i++){
-            printf("%d", cipher[i]);
-            if(i < ciphlen-1) printf(", ");
-        }
-        printf("}\n");
-        
-        printf("Ciphertext (hex): ");
-        for(int i=0; i<ciphlen; i++){
-            printf("%02x ", cipher[i]);
-        }
-        printf("\n");
-        
-        printf("Ciphertext (text): ");
-        for(int i=0; i<ciphlen; i++){
-            if(cipher[i] >= 32 && cipher[i] <= 126){
-                printf("%c", cipher[i]);
-            } else {
-                printf(".");
+    if(!is_binary_mode){
+        if(id == 0){
+            printf("=== MODE 1: DES Brute Force Cracker ===\n");
+            printf("Reading input from: %s\n\n", argv[1]);
+            
+            if(!readInputFile(argv[1], &encryption_key, &plaintext, &ciphlen, &search)){
+                MPI_Abort(comm, 1);
             }
+            
+            printf("--- Input Parameters ---\n");
+            printf("Encryption key: %ld\n", encryption_key);
+            printf("Plaintext: %s\n", plaintext);
+            printf("Plaintext length (padded): %d bytes\n", ciphlen);
+            printf("Search string: \"%s\"\n", search);
+            
+            cipher = (unsigned char *)malloc(ciphlen);
+            encrypt(encryption_key, (unsigned char *)plaintext, ciphlen, cipher);
+            
+            printf("\n--- Encrypted Data ---\n");
+            printf("Ciphertext (array): {");
+            for(int i=0; i<ciphlen; i++){
+                printf("%d", cipher[i]);
+                if(i < ciphlen-1) printf(", ");
+            }
+            printf("}\n");
+            
+            printf("Ciphertext (hex): ");
+            for(int i=0; i<ciphlen; i++){
+                printf("%02x ", cipher[i]);
+            }
+            printf("\n");
+            
+            printf("Ciphertext (text): ");
+            for(int i=0; i<ciphlen; i++){
+                if(cipher[i] >= 32 && cipher[i] <= 126){
+                    printf("%c", cipher[i]);
+                } else {
+                    printf(".");
+                }
+            }
+            printf("\n\n");
+
+            char bin_filename[256];
+            snprintf(bin_filename, sizeof(bin_filename), "encrypted_output.bin");
+            saveBinaryFile(bin_filename, cipher, ciphlen);
+            printf("\n");
         }
-        printf("\n\n");
-    }
+    } else { 
+
+        if(argc < 3){
+            if(id == 0){
+                printf("Error: Search string required for .bin mode\n");
+                printf("Usage: mpirun -np <N> %s <file.bin> <search_string>\n", argv[0]);
+            }
+            MPI_Finalize();
+            return 1;
+        }
     
+        if(id == 0){
+            printf("=== MODE 2: Decrypt from Binary ===\n");
+            printf("Encrypted file: %s\n", argv[1]);
+            printf("Search string: \"%s\"\n\n", argv[2]);
+            
+            if(!readBinaryFile(argv[1], &cipher, &ciphlen)){
+                MPI_Abort(comm, 1);
+            }
+            
+            search = strdup(argv[2]);
+            
+            printf("Ciphertext (hex): ");
+            for(int i=0; i<ciphlen; i++){
+                printf("%02x ", cipher[i]);
+            }
+            printf("\n\n");
+        }
+    }
+        
     MPI_Bcast(&ciphlen, 1, MPI_INT, 0, comm);
     
     if(id != 0){
