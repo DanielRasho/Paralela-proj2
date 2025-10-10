@@ -7,7 +7,7 @@ if [ $? -eq 0 ]; then
     echo "¡Compilación exitosa!"
     echo ""
     echo "=== Ejecutando con 4 procesos MPI para desencriptar mensaje encriotado en .bin==="
-    mpirun -np 4 ./main encrypted_output.bin "ipsum dolor sit amet"
+    mpirun -np 4 ./main encrypted_output.bin "consectetur adipiscing elit"
 else
     echo "Error en la compilación"
     exit 1
